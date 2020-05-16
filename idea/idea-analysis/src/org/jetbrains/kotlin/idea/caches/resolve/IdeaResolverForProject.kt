@@ -53,6 +53,10 @@ class IdeaResolverForProject(
     delegateResolver,
     ServiceManager.getService(projectContext.project, IdePackageOracleFactory::class.java)
 ) {
+    init {
+        println("IdeaResolverForProject")
+    }
+
     private val builtInsCache: BuiltInsCache =
         (delegateResolver as? IdeaResolverForProject)?.builtInsCache ?: BuiltInsCache(projectContext, this)
 
