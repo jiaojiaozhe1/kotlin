@@ -26,8 +26,8 @@ import org.jetbrains.kotlin.idea.perf.PerformanceNativeProjectsTest.TestProject.
 import org.jetbrains.kotlin.idea.perf.PerformanceNativeProjectsTest.TestTarget.*
 import org.jetbrains.kotlin.idea.perf.Stats.Companion.WARM_UP
 import org.jetbrains.kotlin.idea.perf.Stats.Companion.tcSuite
+import org.jetbrains.kotlin.idea.perf.util.logMessage
 import org.jetbrains.kotlin.idea.testFramework.ProjectOpenAction.GRADLE_PROJECT
-import org.jetbrains.kotlin.idea.testFramework.logMessage
 import org.jetbrains.kotlin.idea.testFramework.suggestOsNeutralFileName
 import org.jetbrains.kotlin.idea.util.projectStructure.allModules
 import org.jetbrains.kotlin.library.KOTLIN_STDLIB_NAME
