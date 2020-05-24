@@ -21,6 +21,13 @@ class ProfileTools {
             replaceProfile(profile)
         }
 
+        internal fun Project.disableAllInspections() {
+            InspectionProfileImpl.INIT_INSPECTIONS = true
+            val profile = InspectionProfileImpl("no-inspections")
+            profile.disableAllTools(this)
+            replaceProfile(profile)
+        }
+
         internal fun Project.initDefaultProfile() {
             val projectInspectionProfileManager = ProjectInspectionProfileManager.getInstance(this)
             projectInspectionProfileManager.forceLoadSchemes()
@@ -44,6 +51,17 @@ class ProfileTools {
             val profile = InspectionProfileImpl("$inspectionName-only")
             profile.disableAllTools(this)
             profile.enableTool(inspectionName, this)
+
+            replaceProfile(profile)
+        }
+
+        internal fun Project.enableInspections(vararg inspectionNames: String) {
+            InspectionProfileImpl.INIT_INSPECTIONS = true
+            val profile = InspectionProfileImpl("custom")
+            profile.disableAllTools(this)
+            inspectionNames.forEach {
+                profile.enableTool(it, this)
+            }
 
             replaceProfile(profile)
         }

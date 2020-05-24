@@ -5,34 +5,21 @@
 
 package org.jetbrains.kotlin.idea.perf
 
+import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.openapi.module.impl.ProjectLoadingErrorsHeadlessNotifier
-import org.jetbrains.kotlin.idea.perf.Stats.Companion.printStatValue
-import org.jetbrains.kotlin.idea.perf.Stats.Companion.tcSuite
+import com.intellij.testFramework.UsefulTestCase
+import org.jetbrains.kotlin.idea.perf.util.*
+import org.jetbrains.kotlin.idea.perf.util.ExternalProject.Companion.KOTLIN_PROJECT_PATH
+import org.jetbrains.kotlin.idea.perf.util.PerformanceSuite.StatsScopeConfig
 import org.jetbrains.kotlin.idea.testFramework.ProjectOpenAction
-import org.jetbrains.kotlin.idea.testFramework.logMessage
+import org.jetbrains.kotlin.test.JUnit3RunnerWithInners
+import org.junit.runner.RunWith
 import java.io.File
 
-class HighlightWholeProjectPerformanceTest : AbstractPerformanceProjectsTest() {
-
-    companion object {
-
-        @JvmStatic
-        val hwStats: Stats = Stats("helloWorld project")
-
-        @JvmStatic
-        val warmUp = WarmUpProject(hwStats)
-
-        init {
-            // there is no @AfterClass for junit3.8
-            Runtime.getRuntime().addShutdownHook(Thread { hwStats.close() })
-        }
-
-    }
+@RunWith(JUnit3RunnerWithInners::class)
+class HighlightWholeProjectPerformanceTest : UsefulTestCase() {
 
     override fun setUp() {
-        super.setUp()
-        warmUp.warmUp(this)
-
         val allowedErrorDescription = setOf(
             "Unknown artifact type: war",
             "Unknown artifact type: exploded-war"
@@ -57,55 +44,56 @@ class HighlightWholeProjectPerformanceTest : AbstractPerformanceProjectsTest() {
             val projectName = projectSpec.name
             val projectPath = projectSpec.path
 
-            val suiteName = "$projectName project"
-            try {
-                tcSuite(suiteName) {
-                    val stats = Stats(suiteName)
-                    stats.use { stat ->
-                        perfGradleBasedProject(projectName, projectPath, stat)
-                        //perfJpsBasedProject(projectName, stat)
+            suite(
+                suiteName = "$projectName project",
+                config = StatsScopeConfig(warmup = 1, iterations = 3)
+            ) {
+                app {
+                    warmUpProject()
 
-                        try {
+                    try {
+                        project(ExternalProject(projectPath, ProjectOpenAction.GRADLE_PROJECT), refresh = true) {
+                            profile(if (emptyProfile) EmptyProfile else DefaultProfile)
+
                             val projectDir = File(projectPath)
+
                             val ktFiles = projectDir.allFilesWithExtension("kt").toList()
-                            printStatValue("$suiteName: number of kt files", ktFiles.size)
+                            logStatValue("number of kt files", ktFiles.size)
                             val topMidLastFiles =
                                 limitedFiles(ktFiles, 10)
                                     .map {
                                         val path = it.path
                                         it to path.substring(path.indexOf(projectPath) + projectPath.length + 1)
                                     }
-                            printStatValue("$suiteName: limited number of kt files", topMidLastFiles.size)
+                            logStatValue("limited number of kt files", topMidLastFiles.size)
 
                             topMidLastFiles.forEach {
                                 logMessage { "${it.second} fileSize: ${it.first.length()}" }
                             }
 
-                            topMidLastFiles.forEachIndexed { idx, file ->
-                                logMessage { "$idx / ${topMidLastFiles.size} : ${file.second} fileSize: ${file.first.length()}" }
+                            topMidLastFiles.forEachIndexed { idx, pair ->
+                                val file = pair.first
+                                val fileName = pair.second
+                                logMessage { "$idx / ${topMidLastFiles.size} : $fileName fileSize: ${file.length()}" }
+
                                 try {
-                                    // 1x3 it not good enough for statistics, but at least it gives some overview
-                                    perfHighlightFile(
-                                        project(),
-                                        fileName = file.second,
-                                        stats = stat,
-                                        warmUpIterations = 1,
-                                        iterations = 3,
-                                        filenameSimplifier = { it },
-                                        tools = if (emptyProfile) emptyArray() else null,
-                                        checkStability = false
-                                    )
+                                    fixture(fileName).use {
+                                        measure<List<HighlightInfo>>(fileName) {
+                                            test = {
+                                                highlight(it)
+                                            }
+                                        }
+                                    }
                                 } catch (e: Exception) {
                                     // nothing as it is already caught by perfTest
                                 }
                             }
-                        } finally {
-                            closeProject()
                         }
+                    } catch (e: Exception) {
+                        // nothing as it is already caught by perfTest
                     }
                 }
-            } catch (e: Exception) {
-                // don't fail entire test on a single failure
+
             }
         }
     }
@@ -122,17 +110,6 @@ class HighlightWholeProjectPerformanceTest : AbstractPerformanceProjectsTest() {
         val lastFiles = sortedBySize.takeLast(percentOfFiles).map { it.first }
 
         return LinkedHashSet(topFiles + midFiles + lastFiles)
-    }
-
-    private fun perfGradleBasedProject(name: String, path: String, stats: Stats) {
-        myProject = perfOpenProject(
-            name = name,
-            stats = stats,
-            note = "",
-            path = path,
-            openAction = ProjectOpenAction.GRADLE_PROJECT,
-            fast = true
-        )
     }
 
     private fun projectSpecs(): List<ProjectSpec> {

@@ -26,6 +26,7 @@ import com.intellij.testFramework.*
 import com.intellij.testFramework.fixtures.impl.CodeInsightTestFixtureImpl
 import com.intellij.util.ArrayUtilRt
 import com.intellij.util.ThrowableRunnable
+import com.intellij.util.containers.toArray
 import com.intellij.util.indexing.UnindexedFilesUpdater
 import org.jetbrains.kotlin.idea.core.script.ScriptConfigurationManager
 import org.jetbrains.kotlin.idea.framework.KotlinSdkType
@@ -33,8 +34,11 @@ import org.jetbrains.kotlin.idea.perf.ProjectBuilder
 import org.jetbrains.kotlin.idea.perf.Stats
 import org.jetbrains.kotlin.idea.perf.Stats.Companion.runAndMeasure
 import org.jetbrains.kotlin.idea.perf.performanceTest
+import org.jetbrains.kotlin.idea.perf.util.ProfileTools.Companion.disableAllInspections
 import org.jetbrains.kotlin.idea.perf.util.ProfileTools.Companion.enableAllInspections
+import org.jetbrains.kotlin.idea.perf.util.ProfileTools.Companion.enableInspections
 import org.jetbrains.kotlin.idea.perf.util.ProfileTools.Companion.enableSingleInspection
+import org.jetbrains.kotlin.idea.perf.util.ProfileTools.Companion.initDefaultProfile
 import org.jetbrains.kotlin.idea.test.invalidateLibraryCache
 import org.jetbrains.kotlin.idea.testFramework.*
 import org.jetbrains.kotlin.idea.testFramework.TestApplicationManager
@@ -94,6 +98,11 @@ class PerformanceSuite {
 
         fun <T> measure(name: String, f: MeasurementScope<T>.() -> Unit, after: (() -> Unit)?): List<T?> =
             MeasurementScope<T>(name, stats, config, after = after).apply(f).run()
+
+        fun logStatValue(name: String, value: Any) {
+            logMessage { "buildStatisticValue key='${stats.name}: $name' value='$value'" }
+            tcMessage { "buildStatisticValue key='${stats.name}: $name' value='$value'" }
+        }
     }
 
     data class TypingConfig(
@@ -222,6 +231,12 @@ class PerformanceSuite {
         abstract val project: Project
         val openFiles = mutableListOf<VirtualFile>()
 
+        fun profile(profile: ProjectProfile) {
+            profile.apply(project)
+        }
+
+        fun highlight(fixture: Fixture) = highlight(fixture.psiFile)
+
         fun highlight(editorFile: PsiFile?) =
             editorFile?.let {
                 it.highlightFile()
@@ -347,7 +362,7 @@ class PerformanceSuite {
                 UsefulTestCase.assertTrue("path ${config.path} does not exist, check README.md", File(projectPath).exists())
 
                 val openProject = OpenProject(
-                    projectPath = config.path,
+                    projectPath = projectPath,
                     projectName = config.name,
                     jdk = app.jdk,
                     projectOpenAction = config.openWith
@@ -377,8 +392,22 @@ class PerformanceSuite {
             }
         }
     }
-
 }
+
+sealed class ProjectProfile {
+    fun apply(project: Project) {
+        when (this) {
+            EmptyProfile -> project.disableAllInspections()
+            DefaultProfile -> project.initDefaultProfile()
+            FullProfile -> project.enableAllInspections()
+            is CustomProfile -> project.enableInspections(*inspectionNames.toArray(emptyArray()))
+        }
+    }
+}
+object EmptyProfile : ProjectProfile()
+object DefaultProfile : ProjectProfile()
+object FullProfile : ProjectProfile()
+data class CustomProfile(val inspectionNames: List<String>) : ProjectProfile()
 
 fun UsefulTestCase.suite(
     suiteName: String? = null,
@@ -387,7 +416,7 @@ fun UsefulTestCase.suite(
 ) {
     PerformanceSuite.suite(
         suiteName ?: this.javaClass.name,
-        PerformanceSuite.StatsScope(config, Stats(config.name ?: name), testRootDisposable),
+        PerformanceSuite.StatsScope(config, Stats(config.name ?: suiteName ?: name), testRootDisposable),
         block
     )
 }
